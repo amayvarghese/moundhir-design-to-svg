@@ -26,15 +26,22 @@ export async function generateSvg(
 ): Promise<GenerateSvgResponse> {
   const { imageBase64, mimeType } = dataUrlToBase64(imageDataUrl);
 
-  const response = await fetch("/generate-svg", {
+  // Prefer /api/* on Vercel; local Vite proxies both paths to Express.
+  const response = await fetch("/api/generate-svg", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64, mimeType }),
   });
 
-  const data = (await response.json()) as
-    | GenerateSvgResponse
-    | { error?: string };
+  const raw = await response.text();
+  let data: GenerateSvgResponse | { error?: string };
+  try {
+    data = JSON.parse(raw) as GenerateSvgResponse | { error?: string };
+  } catch {
+    throw new Error(
+      `Server returned non-JSON (${response.status}). ${raw.slice(0, 160).replace(/\s+/g, " ")}`,
+    );
+  }
 
   if (!response.ok) {
     throw new Error(

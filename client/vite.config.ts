@@ -66,6 +66,16 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      "/api/generate-svg": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/generate-svg/, "/generate-svg"),
+      },
+      "/api/health": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/health/, "/health"),
+      },
       "/generate-svg": {
         target: "http://localhost:3001",
         changeOrigin: true,
