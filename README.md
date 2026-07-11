@@ -20,11 +20,14 @@ Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 1. Capture or upload an image
 2. `POST /generate-svg` with `{ imageBase64, mimeType, mode? }`
 3. **sharp** normalizes contrast and resizes to grayscale
-4. The server extracts a 1-px line image, then vectorizes it into stroke paths:
+4. The server extracts a 1-px line image, then vectorizes it into **exact geometry**:
    - **line** — binarize dark pen/pencil ink (for sketches)
    - **edge** — Sobel edge detection of object contours (for photos / 3D renders)
    - lines are morphologically closed (bridging gaps), thinned to a 1-px skeleton
-     (Zhang–Suen), traced into polylines, and simplified (Ramer–Douglas–Peucker)
+     (staircase-aware Zhang–Suen), and traced into polylines
+   - each stroke is fitted to the simplest primitive it supports — a perfectly
+     **straight line**, a true **circle**, or a **circular arc** — with sharp
+     corners preserved and near-axis lines snapped to horizontal/vertical
 5. The result is centered + scaled into the fixed 1.5 × 3 m canvas, optimized with
    **svgo**, and rendered in the browser
 
