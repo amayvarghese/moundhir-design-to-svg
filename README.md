@@ -1,9 +1,9 @@
 # Sketch2SVG Camera
 
-Capture hand-drawn sketches with your camera and convert them into clean, editable
-SVG using **potrace** — the same deterministic raster-to-vector engine Inkscape
-uses. The output traces the actual pixels of your drawing, so it looks like the
-photo, not a model's guess. No API key, no per-request cost.
+Capture or upload an image and turn it into a clean, editable **technical line
+drawing** as SVG — single-stroke centerline paths, the way a CAD/blueprint drawing
+reads. Fully deterministic (no LLM guessing), no API key, no per-request cost, and
+it runs in tens of milliseconds.
 
 Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 
@@ -12,21 +12,35 @@ Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 | Layer | Tech |
 | --- | --- |
 | Frontend | React, Vite, TypeScript, Tailwind, Framer Motion, PWA |
-| API | potrace tracing via Express (local) / Vercel Serverless |
+| API | Deterministic vectorizer via Express (local) / Vercel Serverless |
 | Image / SVG | sharp, potrace, svgo, fast-xml-parser, zod |
 
 ## How it works
 
 1. Capture or upload an image
-2. Convert to base64 and `POST /generate-svg` with `{ imageBase64, mimeType }`
-3. The server cleans the photo with **sharp** (grayscale, contrast normalize,
-   despeckle) so the ink stands out from the paper
-4. **potrace** vectorizes the black/white image into crisp vector paths
-5. The result is centered and scaled into the fixed 1.5 × 3 m canvas, optimized
-   with **svgo**, and rendered in the browser
+2. `POST /generate-svg` with `{ imageBase64, mimeType, mode? }`
+3. **sharp** normalizes contrast and resizes to grayscale
+4. The server extracts a 1-px line image, then vectorizes it into stroke paths:
+   - **line** — binarize dark pen/pencil ink (for sketches)
+   - **edge** — Sobel edge detection of object contours (for photos / 3D renders)
+   - lines are morphologically closed (bridging gaps), thinned to a 1-px skeleton
+     (Zhang–Suen), traced into polylines, and simplified (Ramer–Douglas–Peucker)
+5. The result is centered + scaled into the fixed 1.5 × 3 m canvas, optimized with
+   **svgo**, and rendered in the browser
 
-Because the pipeline is fully deterministic, the same drawing always produces the
-same SVG — and it runs in tens of milliseconds.
+### Drawing modes
+
+Pick a style in the UI, or send `mode` in the request:
+
+| `mode` | Output |
+| --- | --- |
+| `technical` (default) | Centerline line drawing; auto-picks line vs. edge |
+| `line` | Centerline drawing, forcing dark-ink extraction |
+| `edge` | Centerline drawing, forcing edge extraction (photos, renders) |
+| `silhouette` | Filled potrace trace (solid shapes, not lines) |
+
+Because the pipeline is fully deterministic, the same image + mode always produces
+the same SVG.
 
 ## Local development
 
@@ -82,7 +96,8 @@ Project → Settings → Domains → add your domain.
 ```json
 {
   "imageBase64": "<base64 without data-URL prefix>",
-  "mimeType": "image/jpeg"
+  "mimeType": "image/jpeg",
+  "mode": "technical"
 }
 ```
 
@@ -92,10 +107,11 @@ Response:
 {
   "svg": "<svg width=\"1.5m\" height=\"3m\" ...>",
   "meta": {
-    "elapsedMs": 79,
+    "elapsedMs": 72,
     "physicalSize": "1.5 m × 3 m",
-    "engine": "potrace",
-    "model": "potrace"
+    "engine": "technical",
+    "mode": "line",
+    "strokeCount": 20
   }
 }
 ```
@@ -107,9 +123,12 @@ Returns `{ ok: true, engine: "potrace" }`.
 ## Project layout
 
 ```
-api/                 Vercel serverless functions (api/_tracer.js = pipeline)
+api/                 Vercel serverless functions
+  _technical.js      Centerline vectorizer (line/edge → stroke paths)
+  _tracer.js         potrace silhouette trace + shared canvas helpers
+  generate-svg.js    HTTP handler (mode routing)
 client/              Vite React PWA
-server/              Local Express API (server/src/services/tracer.ts)
+server/              Local Express API (delegates to the api/ modules)
 vercel.json          Vercel build + rewrites
 .env.example         Env template (PORT / CORS only)
 ```
@@ -117,5 +136,6 @@ vercel.json          Vercel build + rewrites
 ## Notes
 
 - Camera requires HTTPS (Vercel provides this) or `localhost`.
-- For the cleanest trace, use a well-lit photo of a dark-ink drawing on light paper.
+- For the cleanest line drawing, use a well-lit image with clear outlines.
+  If `technical` (auto) misjudges, force `line` (sketches) or `edge` (photos).
 - Hobby plan function timeout is limited; Pro allows up to 60 s (`maxDuration` is set to 60).

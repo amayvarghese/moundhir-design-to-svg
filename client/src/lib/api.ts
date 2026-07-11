@@ -1,4 +1,4 @@
-import type { GenerateSvgResponse, StoredSvg } from "../types";
+import type { GenerateSvgResponse, StoredSvg, TraceMode } from "../types";
 
 const STORAGE_KEY = "sketch2svg:last-svg";
 
@@ -18,11 +18,12 @@ export function dataUrlToBase64(dataUrl: string): {
 }
 
 /**
- * Convert captured/uploaded image (data URL) → base64 JSON → potrace tracer via backend.
- * Flow: base64 image → chat completions → extract SVG → return for browser render.
+ * Convert captured/uploaded image (data URL) → base64 JSON → vector tracer backend.
+ * Flow: base64 image → server vectorizes (technical line drawing) → SVG for render.
  */
 export async function generateSvg(
   imageDataUrl: string,
+  mode: TraceMode = "technical",
 ): Promise<GenerateSvgResponse> {
   const { imageBase64, mimeType } = dataUrlToBase64(imageDataUrl);
 
@@ -30,7 +31,7 @@ export async function generateSvg(
   const response = await fetch("/api/generate-svg", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, mimeType }),
+    body: JSON.stringify({ imageBase64, mimeType, mode }),
     cache: "no-store",
   });
 
@@ -254,18 +255,8 @@ export async function cropAndCenterDrawing(
     cropH,
   );
 
-  // Light contrast boost for clearer line detection by the model
-  const imageData = outCtx.getImageData(0, 0, outW, outH);
-  const px = imageData.data;
-  for (let i = 0; i < px.length; i += 4) {
-    const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-    const v = y < 200 ? Math.max(0, y * 0.55) : 255;
-    px[i] = v;
-    px[i + 1] = v;
-    px[i + 2] = v;
-  }
-  outCtx.putImageData(imageData, 0, 0);
-
+  // Keep the pixels intact — the server does adaptive contrast/thresholding and
+  // edge detection, which needs the original faint lines and tones preserved.
   return out.toDataURL("image/png");
 }
 

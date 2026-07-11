@@ -1,5 +1,6 @@
 const { z } = require("zod");
 const { traceImageToSvg } = require("./_tracer");
+const { imageToTechnicalSvg } = require("./_technical");
 
 const bodySchema = z.object({
   imageBase64: z.string().min(1),
@@ -8,6 +9,13 @@ const bodySchema = z.object({
     .regex(/^image\//)
     .optional()
     .default("image/jpeg"),
+  // "technical" (default) → clean centerline line drawing.
+  // "line" / "edge"        → technical drawing, forcing the extraction method.
+  // "silhouette"           → filled potrace trace (legacy behavior).
+  mode: z
+    .enum(["technical", "line", "edge", "silhouette"])
+    .optional()
+    .default("technical"),
 });
 
 module.exports = async function handler(req, res) {
@@ -37,7 +45,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    let { imageBase64, mimeType } = parsed.data;
+    let { imageBase64, mimeType, mode } = parsed.data;
     const dataUrlMatch = imageBase64.match(
       /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i,
     );
@@ -48,17 +56,25 @@ module.exports = async function handler(req, res) {
       imageBase64 = imageBase64.replace(/^data:[^;]+;base64,/i, "");
     }
 
-    const result = await traceImageToSvg(imageBase64, mimeType);
+    let result;
+    if (mode === "silhouette") {
+      result = await traceImageToSvg(imageBase64, mimeType);
+    } else {
+      const traceMode = mode === "technical" ? "auto" : mode; // line | edge | auto
+      result = await imageToTechnicalSvg(imageBase64, mimeType, {
+        mode: traceMode,
+      });
+    }
 
     res.status(200).json({
       svg: result.svg,
-      meta: { ...result.meta, retried: false, model: "potrace" },
+      meta: { ...result.meta, retried: false, model: result.meta.engine },
     });
   } catch (error) {
     console.error("[api/generate-svg]", error);
     const message =
       error instanceof Error ? error.message : "Unexpected serverless error";
-    const status = /no shapes detected|failed validation/i.test(message)
+    const status = /no (shapes|lines) detected|failed validation/i.test(message)
       ? 422
       : 500;
     res.status(status).json({ error: message });

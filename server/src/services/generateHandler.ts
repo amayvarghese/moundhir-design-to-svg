@@ -9,6 +9,10 @@ const bodySchema = z.object({
     .regex(/^image\//, "mimeType must be an image/* type")
     .optional()
     .default("image/jpeg"),
+  mode: z
+    .enum(["technical", "line", "edge", "silhouette"])
+    .optional()
+    .default("technical"),
 });
 
 export type GenerateSvgBody = z.infer<typeof bodySchema>;
@@ -65,7 +69,11 @@ export async function handleGenerateSvgRequest(
       imageBase64 = imageBase64.replace(/^data:[^;]+;base64,/i, "");
     }
 
-    const result = await generateSvgFromImage({ imageBase64, mimeType });
+    const result = await generateSvgFromImage({
+      imageBase64,
+      mimeType,
+      mode: parsed.data.mode,
+    });
     const dimensions = getSvgDimensions(result.svg);
 
     return {

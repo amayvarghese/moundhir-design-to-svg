@@ -250,4 +250,12 @@ async function traceImageToSvg(imageBase64, mimeType) {
   };
 }
 
-module.exports = { traceImageToSvg, TARGET };
+module.exports = {
+  traceImageToSvg,
+  TARGET,
+  // Shared helpers reused by the technical (centerline) vectorizer.
+  otsuThreshold,
+  applyTargetCanvas,
+  optimizeSvg,
+  isValidSvg,
+};

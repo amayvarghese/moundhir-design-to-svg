@@ -20,7 +20,7 @@ import {
   loadPersistedSvg,
   persistSvg,
 } from "./lib/api";
-import type { AppPhase, GenerateMeta } from "./types";
+import type { AppPhase, GenerateMeta, TraceMode } from "./types";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,6 +37,7 @@ export default function App() {
   const [captured, setCaptured] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const [meta, setMeta] = useState<GenerateMeta | null>(null);
+  const [mode, setMode] = useState<TraceMode>("technical");
 
   // Request camera on load
   useEffect(() => {
@@ -106,7 +107,7 @@ export default function App() {
     setPhase("generating");
     try {
       // captured is already a data URL (base64) from camera / gallery
-      const result = await generateSvg(captured);
+      const result = await generateSvg(captured, mode);
       setSvg(result.svg);
       setMeta(result.meta);
       persistSvg({
@@ -125,7 +126,7 @@ export default function App() {
       setPhase("preview");
       toast.error(err instanceof Error ? err.message : "Generation failed");
     }
-  }, [captured]);
+  }, [captured, mode]);
 
   const handleCopy = useCallback(async () => {
     if (!svg) return;
@@ -225,6 +226,8 @@ export default function App() {
             onRetake={handleRetake}
             onGenerate={() => void handleGenerate()}
             generating={phase === "generating"}
+            mode={mode}
+            onModeChange={setMode}
           />
         )}
 

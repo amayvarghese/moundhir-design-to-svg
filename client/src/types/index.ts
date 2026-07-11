@@ -1,5 +1,8 @@
 export type FacingMode = "user" | "environment";
 
+/** How the backend vectorizes the image into SVG. */
+export type TraceMode = "technical" | "line" | "edge" | "silhouette";
+
 export type AppPhase =
   | "camera"
   | "preview"
