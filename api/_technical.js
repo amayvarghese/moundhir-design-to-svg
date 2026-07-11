@@ -65,6 +65,145 @@ async function toGray(imageBase64) {
 }
 
 /**
+ * Detect a coloured sticky-note / paper the drawing sits on, and return a crop
+ * just inside it. The note is the largest region that is both bright and colour-
+ * saturated (a vivid yellow note stands out from white paper, which is bright but
+ * unsaturated, and from a darker background). Returns null when no clear coloured
+ * note is present, so plain white-paper drawings fall through to ink clustering.
+ */
+async function detectNoteCrop(imageBase64, w, h, gray) {
+  const input = Buffer.from(imageBase64, "base64");
+  const { data, info } = await sharp(input, { failOn: "none" })
+    .rotate()
+    .resize(w, h, { fit: "inside", withoutEnlargement: true })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const W = info.width;
+  const H = info.height;
+  const ch = info.channels;
+
+  const hueOf = (r, g, b) => {
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const d = mx - mn;
+    if (d === 0) return -1;
+    let hh;
+    if (mx === r) hh = ((g - b) / d) % 6;
+    else if (mx === g) hh = (b - r) / d + 2;
+    else hh = (r - g) / d + 4;
+    hh *= 60;
+    return hh < 0 ? hh + 360 : hh;
+  };
+  // A sticky note is vivid and bright: high value AND clear colour saturation.
+  const isNoteColor = (r, g, b) =>
+    Math.max(r, g, b) > 175 && Math.max(r, g, b) - Math.min(r, g, b) > 55;
+
+  // Pass 1: histogram the hue of bright, saturated pixels to find the note's colour.
+  const BINS = 18;
+  const hist = new Float64Array(BINS);
+  for (let i = 0, p = 0; i < W * H; i++, p += ch) {
+    const r = data[p];
+    const g = data[p + 1];
+    const b = data[p + 2];
+    if (!isNoteColor(r, g, b)) continue;
+    const hu = hueOf(r, g, b);
+    if (hu >= 0) hist[Math.floor(hu / (360 / BINS)) % BINS]++;
+  }
+  let domBin = 0;
+  for (let i = 1; i < BINS; i++) if (hist[i] > hist[domBin]) domBin = i;
+  if (hist[domBin] < 0.02 * W * H) return null; // no clear coloured note
+
+  // Pass 2: occupancy grid of pixels matching the dominant note hue (±1 bin).
+  const cell = Math.max(6, Math.round(Math.min(W, H) * 0.02));
+  const gw = Math.ceil(W / cell);
+  const gh = Math.ceil(H / cell);
+  const occ = new Float64Array(gw * gh);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = (y * W + x) * ch;
+      const r = data[p];
+      const g = data[p + 1];
+      const b = data[p + 2];
+      if (!isNoteColor(r, g, b)) continue;
+      const hu = hueOf(r, g, b);
+      if (hu < 0) continue;
+      const bin = Math.floor(hu / (360 / BINS)) % BINS;
+      const dist = Math.min((bin - domBin + BINS) % BINS, (domBin - bin + BINS) % BINS);
+      if (dist <= 1) occ[Math.floor(y / cell) * gw + Math.floor(x / cell)]++;
+    }
+  }
+  const cellArea = cell * cell;
+  const grid = new Uint8Array(gw * gh);
+  for (let i = 0; i < gw * gh; i++) if (occ[i] > cellArea * 0.5) grid[i] = 1;
+
+  // Largest connected component of note-coloured cells.
+  const label = new Int32Array(gw * gh).fill(-1);
+  const stack = [];
+  let best = null;
+  for (let start = 0; start < gw * gh; start++) {
+    if (!grid[start] || label[start] >= 0) continue;
+    stack.length = 0;
+    stack.push(start);
+    label[start] = start;
+    let count = 0;
+    let minx = gw;
+    let miny = gh;
+    let maxx = 0;
+    let maxy = 0;
+    while (stack.length) {
+      const c = stack.pop();
+      const cx = c % gw;
+      const cy = (c - cx) / gw;
+      count++;
+      if (cx < minx) minx = cx;
+      if (cx > maxx) maxx = cx;
+      if (cy < miny) miny = cy;
+      if (cy > maxy) maxy = cy;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+          const ni = ny * gw + nx;
+          if (grid[ni] && label[ni] < 0) {
+            label[ni] = start;
+            stack.push(ni);
+          }
+        }
+      }
+    }
+    if (!best || count > best.count) best = { count, minx, miny, maxx, maxy };
+  }
+  if (!best || best.count / (gw * gh) < 0.03) return null;
+
+  // Inset a little so the note's own edge/shadow isn't traced.
+  const insetX = Math.max(1, Math.round((best.maxx - best.minx + 1) * 0.05));
+  const insetY = Math.max(1, Math.round((best.maxy - best.miny + 1) * 0.05));
+  const x0 = Math.max(0, (best.minx + insetX) * cell);
+  const y0 = Math.max(0, (best.miny + insetY) * cell);
+  const x1 = Math.min(w, (best.maxx + 1 - insetX) * cell);
+  const y1 = Math.min(h, (best.maxy + 1 - insetY) * cell);
+  const cw = x1 - x0;
+  const ch2 = y1 - y0;
+  if (cw < 24 || ch2 < 24 || cw * ch2 > 0.9 * w * h) return null;
+
+  // A note must actually hold a drawing: require some dark ink inside it, so a
+  // plain coloured region (e.g. a saturated 3D render) isn't mistaken for a note.
+  if (gray) {
+    let ink = 0;
+    for (let y = y0; y < y1; y++) {
+      const row = y * w;
+      for (let x = x0; x < x1; x++) if (gray[row + x] < 110) ink++;
+    }
+    const inkFrac = ink / (cw * ch2);
+    // Some ink (a drawing exists) but not a solid dark fill (that's not a note).
+    if (inkFrac < 0.002 || inkFrac > 0.4) return null;
+  }
+  return { x0, y0, cw, ch: ch2 };
+}
+
+/**
  * Locate the main drawing in a cluttered photo and return a crop rectangle.
  *
  * The idea: the drawing is the dominant *cluster* of ink. We bucket ink into a
@@ -911,7 +1050,11 @@ async function imageToTechnicalSvg(imageBase64, mimeType, options = {}) {
   // text, logos) unless the caller opted out.
   let cropped = false;
   if (options.isolate !== false) {
-    const rect = findDrawingCrop(gray, w, h);
+    // Prefer a coloured note/paper (robust when the background is inky); fall
+    // back to the dominant ink cluster for plain white-paper drawings.
+    const rect =
+      (await detectNoteCrop(imageBase64, w, h, gray)) ||
+      findDrawingCrop(gray, w, h);
     if (rect) {
       gray = cropGray(gray, w, rect);
       w = rect.cw;
