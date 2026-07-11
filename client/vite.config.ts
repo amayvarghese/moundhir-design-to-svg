@@ -44,6 +44,15 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api/, /^\/generate-svg/, /^\/health/],
         runtimeCaching: [
           {
+            urlPattern: /\/api\/.*/i,
+            handler: "NetworkOnly",
+          },
+          {
+            urlPattern: /\/generate-svg$/i,
+            handler: "NetworkOnly",
+          },
+
+          {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: "CacheFirst",
             options: {

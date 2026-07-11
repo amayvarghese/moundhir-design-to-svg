@@ -13,7 +13,7 @@
       "memory": 1024,
       "maxDuration": 60
     },
-    "api/health.ts": {
+    "api/health.js": {
       "memory": 256,
       "maxDuration": 10
     }

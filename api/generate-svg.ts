@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleGenerateSvgRequest } from "./_lib/generateHandler";
+import { handleGenerateSvgRequest } from "../lib/generateHandler";
 
 export const config = {
   api: {
@@ -10,10 +10,7 @@ export const config = {
   maxDuration: 60,
 };
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Access-Control-Allow-Origin", "*");

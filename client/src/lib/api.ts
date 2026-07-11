@@ -31,6 +31,7 @@ export async function generateSvg(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64, mimeType }),
+    cache: "no-store",
   });
 
   const raw = await response.text();
