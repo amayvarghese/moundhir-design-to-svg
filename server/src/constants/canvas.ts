@@ -8,7 +8,7 @@ export const TARGET_CANVAS = {
   heightAttr: "3m",
   viewBox: "0 0 1500 3000",
   /** Margin inside the canvas when fitting artwork (fraction of each side). */
-  paddingRatio: 0.06,
+  paddingRatio: 0.04,
 } as const;
 
 export function formatPhysicalSize(): string {

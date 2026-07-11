@@ -167,7 +167,7 @@ export async function copyToClipboard(text: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/** Auto-crop and center the drawing region by trimming near-white borders. */
+/** Auto-crop the drawing and pad to the 1.5×3 (1:2) canvas aspect ratio. */
 export async function cropAndCenterDrawing(
   dataUrl: string,
 ): Promise<string> {
@@ -179,7 +179,12 @@ export async function cropAndCenterDrawing(
   if (!ctx) return dataUrl;
 
   ctx.drawImage(img, 0, 0);
-  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data, width, height } = ctx.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  );
 
   let minX = width;
   let minY = height;
@@ -201,12 +206,11 @@ export async function cropAndCenterDrawing(
     }
   }
 
-  // If no dark content found, return original
   if (minX >= maxX || minY >= maxY) {
     return dataUrl;
   }
 
-  const pad = Math.round(Math.max(width, height) * 0.04);
+  const pad = Math.round(Math.max(width, height) * 0.03);
   minX = Math.max(0, minX - pad);
   minY = Math.max(0, minY - pad);
   maxX = Math.min(width - 1, maxX + pad);
@@ -214,17 +218,30 @@ export async function cropAndCenterDrawing(
 
   const cropW = maxX - minX + 1;
   const cropH = maxY - minY + 1;
-  const side = Math.max(cropW, cropH);
+
+  // Match physical SVG canvas aspect: 1.5m × 3m → 1:2
+  const targetRatio = 1.5 / 3;
+  const contentRatio = cropW / cropH;
+  let outW: number;
+  let outH: number;
+  if (contentRatio > targetRatio) {
+    outW = cropW;
+    outH = Math.max(1, Math.round(cropW / targetRatio));
+  } else {
+    outH = cropH;
+    outW = Math.max(1, Math.round(cropH * targetRatio));
+  }
+
   const out = document.createElement("canvas");
-  out.width = side;
-  out.height = side;
+  out.width = outW;
+  out.height = outH;
   const outCtx = out.getContext("2d");
   if (!outCtx) return dataUrl;
 
   outCtx.fillStyle = "#ffffff";
-  outCtx.fillRect(0, 0, side, side);
-  const offsetX = Math.floor((side - cropW) / 2);
-  const offsetY = Math.floor((side - cropH) / 2);
+  outCtx.fillRect(0, 0, outW, outH);
+  const offsetX = Math.floor((outW - cropW) / 2);
+  const offsetY = Math.floor((outH - cropH) / 2);
   outCtx.drawImage(
     canvas,
     minX,
@@ -237,7 +254,19 @@ export async function cropAndCenterDrawing(
     cropH,
   );
 
-  return out.toDataURL("image/jpeg", 0.92);
+  // Light contrast boost for clearer line detection by the model
+  const imageData = outCtx.getImageData(0, 0, outW, outH);
+  const px = imageData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    const v = y < 200 ? Math.max(0, y * 0.55) : 255;
+    px[i] = v;
+    px[i + 1] = v;
+    px[i + 2] = v;
+  }
+  outCtx.putImageData(imageData, 0, 0);
+
+  return out.toDataURL("image/png");
 }
 
 export function dataUrlToBlob(dataUrl: string): Blob {

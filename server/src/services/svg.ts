@@ -205,8 +205,10 @@ export function optimizeSvg(svg: string): string {
         name: "preset-default",
         params: {
           overrides: {
-            // Keep our canvas marker + transform group intact
             removeUnknownsAndDefaults: false,
+            convertPathData: false,
+            mergePaths: false,
+            convertShapeToPath: false,
           },
         },
       },

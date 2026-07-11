@@ -2,6 +2,7 @@ const Groq = require("groq-sdk");
 const { XMLParser, XMLValidator } = require("fast-xml-parser");
 const { optimize } = require("svgo");
 const { z } = require("zod");
+const { CONVERT_PROMPT, FIX_PROMPT } = require("./_prompts");
 
 const TARGET = {
   widthAttr: "1.5m",
@@ -11,15 +12,8 @@ const TARGET = {
   heightMm: 3000,
   widthMeters: 1.5,
   heightMeters: 3,
-  paddingRatio: 0.06,
+  paddingRatio: 0.04,
 };
-
-const CONVERT_PROMPT =
-  'Convert this hand-drawn sketch into clean SVG code. Output only the SVG. Use a 1.5m × 3m canvas: width="1.5m" height="3m" viewBox="0 0 1500 3000".';
-
-const FIX_PROMPT =
-  'Fix this SVG. Return only valid SVG XML with width="1.5m" height="3m" viewBox="0 0 1500 3000".';
-
 const bodySchema = z.object({
   imageBase64: z.string().min(1),
   mimeType: z
@@ -141,7 +135,23 @@ function sanitizeAndOptimize(raw) {
   if (!isValidSvg(extracted)) throw new Error("SVG failed validation");
   let optimized = extracted;
   try {
-    optimized = optimize(extracted, { multipass: true, plugins: ["preset-default"] }).data;
+    optimized = optimize(extracted, {
+      multipass: true,
+      plugins: [
+        {
+          name: "preset-default",
+          params: {
+            overrides: {
+              // Keep geometry faithful — avoid aggressive path rewriting
+              convertPathData: false,
+              mergePaths: false,
+              convertShapeToPath: false,
+              removeViewBox: false,
+            },
+          },
+        },
+      ],
+    }).data;
   } catch {
     optimized = extracted;
   }
@@ -161,22 +171,38 @@ async function ensureImageUnderLimit(imageBase64, mimeType) {
 
   try {
     const sharp = require("sharp");
-    const meta = await sharp(input, { failOn: "none" }).rotate().metadata();
-    const width = meta.width || 1024;
-    const height = meta.height || 1024;
-    const needsResize = Math.max(width, height) > 1024 || input.length > 3_000_000;
-    if (!needsResize) {
-      return { imageBase64, mimeType: safeMime };
-    }
-    const scale = Math.min(1, 1024 / Math.max(width, height));
+    const maxDim = 1536;
+    const pipeline = sharp(input, { failOn: "none" }).rotate();
+    const meta = await pipeline.metadata();
+    const width = meta.width || maxDim;
+    const height = meta.height || maxDim;
+    const scale = Math.min(1, maxDim / Math.max(width, height));
     const tw = Math.max(1, Math.round(width * scale));
     const th = Math.max(1, Math.round(height * scale));
+
+    // Always enhance line art for the vision model (higher fidelity tracing)
     const buffer = await sharp(input, { failOn: "none" })
       .rotate()
       .resize(tw, th, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 85 })
+      .grayscale()
+      .normalize()
+      .linear(1.45, -(128 * 0.45))
+      .median(2)
+      .sharpen({ sigma: 1.0, m1: 0.6, m2: 0.4 })
+      .png({ compressionLevel: 9 })
       .toBuffer();
-    return { imageBase64: buffer.toString("base64"), mimeType: "image/jpeg" };
+
+    if (buffer.length > 3_500_000) {
+      const smaller = await sharp(buffer)
+        .resize(Math.round(tw * 0.75), Math.round(th * 0.75), {
+          fit: "inside",
+        })
+        .jpeg({ quality: 92 })
+        .toBuffer();
+      return { imageBase64: smaller.toString("base64"), mimeType: "image/jpeg" };
+    }
+
+    return { imageBase64: buffer.toString("base64"), mimeType: "image/png" };
   } catch (err) {
     console.warn("[preprocess] sharp fallback:", err && err.message);
     if (input.length > 3_500_000) {
@@ -204,9 +230,9 @@ async function callGroq(messages) {
   const completion = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0.1,
+    temperature: 0,
     max_completion_tokens: 16384,
-    top_p: 0.9,
+    top_p: 0.85,
     reasoning_effort: "none",
     reasoning_format: "parsed",
   });
