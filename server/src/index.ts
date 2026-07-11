@@ -21,12 +21,10 @@ app.use(
 app.use(express.json({ limit: "15mb" }));
 
 app.get("/health", (_req, res) => {
-  const key = process.env.GROQ_API_KEY?.trim();
   res.json({
     ok: true,
     service: "sketch2svg-server",
-    model: process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b",
-    groqConfigured: Boolean(key && key !== "your_groq_api_key_here"),
+    engine: "potrace",
   });
 });
 
@@ -58,12 +56,6 @@ app.use(
 );
 
 app.listen(port, () => {
-  const key = process.env.GROQ_API_KEY?.trim();
-  const configured = Boolean(key && key !== "your_groq_api_key_here");
   console.log(`Sketch2SVG server listening on http://localhost:${port}`);
-  console.log(
-    configured
-      ? "GROQ_API_KEY loaded"
-      : "WARNING: GROQ_API_KEY missing — set it in the project root .env",
-  );
+  console.log("Tracing engine: potrace (no API key required)");
 });

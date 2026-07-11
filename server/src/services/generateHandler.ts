@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { generateSvgFromImage } from "./groq.js";
+import { generateSvgFromImage } from "./tracer.js";
 import { getSvgDimensions } from "./svg.js";
-import { ensureImageUnderLimit } from "./preprocess.js";
 
 const bodySchema = z.object({
   imageBase64: z.string().min(1),
@@ -66,11 +65,7 @@ export async function handleGenerateSvgRequest(
       imageBase64 = imageBase64.replace(/^data:[^;]+;base64,/i, "");
     }
 
-    const prepared = await ensureImageUnderLimit(imageBase64, mimeType);
-    const result = await generateSvgFromImage({
-      imageBase64: prepared.imageBase64,
-      mimeType: prepared.mimeType,
-    });
+    const result = await generateSvgFromImage({ imageBase64, mimeType });
     const dimensions = getSvgDimensions(result.svg);
 
     return {
@@ -94,12 +89,11 @@ export async function handleGenerateSvgRequest(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected server error";
-    const status =
-      message.includes("GROQ_API_KEY") || message.includes("configured")
-        ? 503
-        : message.includes("invalid SVG")
-          ? 422
-          : 500;
+    const status = /no shapes detected|failed validation|invalid SVG/i.test(
+      message,
+    )
+      ? 422
+      : 500;
 
     console.error("[generate-svg]", error);
     return { ok: false, error: { status, error: message } };

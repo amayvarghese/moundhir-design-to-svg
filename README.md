@@ -1,52 +1,61 @@
 # Sketch2SVG Camera
 
-Capture hand-drawn sketches with your camera and convert them into clean, editable SVG using Groq Vision (`qwen/qwen3.6-27b`).
+Capture hand-drawn sketches with your camera and convert them into clean, editable
+SVG using **potrace** — the same deterministic raster-to-vector engine Inkscape
+uses. The output traces the actual pixels of your drawing, so it looks like the
+photo, not a model's guess. No API key, no per-request cost.
 
-Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`).
+Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 
 ## Stack
 
 | Layer | Tech |
 | --- | --- |
 | Frontend | React, Vite, TypeScript, Tailwind, Framer Motion, PWA |
-| API | Groq chat completions (vision) via Express (local) / Vercel Serverless |
-| Image / SVG | sharp, svgo, fast-xml-parser, zod |
+| API | potrace tracing via Express (local) / Vercel Serverless |
+| Image / SVG | sharp, potrace, svgo, fast-xml-parser, zod |
 
-## Flow
+## How it works
 
-1. Capture or upload an image  
-2. Convert to base64  
-3. `POST /generate-svg` with `{ imageBase64, mimeType }`  
-4. Server calls Groq chat completions  
-5. Extract SVG → fit to 1.5×3 m → render in the browser  
+1. Capture or upload an image
+2. Convert to base64 and `POST /generate-svg` with `{ imageBase64, mimeType }`
+3. The server cleans the photo with **sharp** (grayscale, contrast normalize,
+   despeckle) so the ink stands out from the paper
+4. **potrace** vectorizes the black/white image into crisp vector paths
+5. The result is centered and scaled into the fixed 1.5 × 3 m canvas, optimized
+   with **svgo**, and rendered in the browser
+
+Because the pipeline is fully deterministic, the same drawing always produces the
+same SVG — and it runs in tens of milliseconds.
 
 ## Local development
 
 ```bash
-cp .env.example .env
-# Add GROQ_API_KEY from https://console.groq.com/keys
+cp .env.example .env   # optional — only sets PORT / CORS origin
 
 npm install
 npm run install:all
 npm run dev
 ```
 
-- App: http://localhost:5173  
-- API: http://localhost:3001  
+- App: http://localhost:5173
+- API: http://localhost:3001
+
+No API keys are required.
 
 ## Deploy to Vercel
 
 ### 1. Push to GitHub
 
-This repo is meant to live at:
+This repo lives at:
 [https://github.com/amayvarghese/moundhir-design-to-svg](https://github.com/amayvarghese/moundhir-design-to-svg)
 
 ### 2. Import in Vercel
 
-1. Go to [vercel.com/new](https://vercel.com/new)  
-2. Import **`amayvarghese/moundhir-design-to-svg`**  
-3. Framework Preset: **Other** (or leave blank — `vercel.json` configures the build)  
-4. Root Directory: **`.`** (repository root)  
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. Import **`amayvarghese/moundhir-design-to-svg`**
+3. Framework Preset: **Other** (or leave blank — `vercel.json` configures the build)
+4. Root Directory: **`.`** (repository root)
 5. Build settings are already in `vercel.json`:
    - Install: `npm install && npm run install:all`
    - Build: `npm run build --prefix client`
@@ -54,16 +63,13 @@ This repo is meant to live at:
 
 ### 3. Environment variables
 
-In **Project → Settings → Environment Variables**, add:
-
-| Name | Value | Environments |
-| --- | --- | --- |
-| `GROQ_API_KEY` | your Groq API key | Production, Preview, Development |
-| `GROQ_VISION_MODEL` | `qwen/qwen3.6-27b` (optional) | Production, Preview, Development |
+None required for tracing. `vercel.json` allocates the tracer function 1 GB of
+memory and a 60 s `maxDuration`.
 
 ### 4. Deploy
 
-Click **Deploy**. After it finishes, open the Vercel URL and allow camera access (HTTPS is required for camera).
+Click **Deploy**. After it finishes, open the Vercel URL and allow camera access
+(HTTPS is required for camera).
 
 ### 5. Optional: custom domain
 
@@ -86,29 +92,30 @@ Response:
 {
   "svg": "<svg width=\"1.5m\" height=\"3m\" ...>",
   "meta": {
-    "elapsedMs": 1234,
+    "elapsedMs": 79,
     "physicalSize": "1.5 m × 3 m",
-    "model": "qwen/qwen3.6-27b"
+    "engine": "potrace",
+    "model": "potrace"
   }
 }
 ```
 
 ### `GET /health`
 
-Health check + whether `GROQ_API_KEY` is configured.
+Returns `{ ok: true, engine: "potrace" }`.
 
 ## Project layout
 
 ```
-api/                 Vercel serverless functions
+api/                 Vercel serverless functions (api/_tracer.js = pipeline)
 client/              Vite React PWA
-server/              Local Express API (same services)
+server/              Local Express API (server/src/services/tracer.ts)
 vercel.json          Vercel build + rewrites
-.env.example         Env template (never commit real keys)
+.env.example         Env template (PORT / CORS only)
 ```
 
 ## Notes
 
-- Never commit `.env` — keys belong in Vercel Environment Variables.  
-- Camera requires HTTPS (Vercel provides this) or `localhost`.  
-- Hobby plan function timeout is limited; Pro allows up to 60s (`maxDuration` is set to 60).  
+- Camera requires HTTPS (Vercel provides this) or `localhost`.
+- For the cleanest trace, use a well-lit photo of a dark-ink drawing on light paper.
+- Hobby plan function timeout is limited; Pro allows up to 60 s (`maxDuration` is set to 60).

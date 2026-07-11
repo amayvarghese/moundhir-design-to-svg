@@ -18,7 +18,7 @@ export function dataUrlToBase64(dataUrl: string): {
 }
 
 /**
- * Convert captured/uploaded image (data URL) → base64 JSON → Groq via backend.
+ * Convert captured/uploaded image (data URL) → base64 JSON → potrace tracer via backend.
  * Flow: base64 image → chat completions → extract SVG → return for browser render.
  */
 export async function generateSvg(
