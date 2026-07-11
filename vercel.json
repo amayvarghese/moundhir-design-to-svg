@@ -5,11 +5,17 @@
   "outputDirectory": "client/dist",
   "framework": null,
   "rewrites": [
-    { "source": "/generate-svg", "destination": "/api/generate-svg" },
-    { "source": "/health", "destination": "/api/health" }
+    {
+      "source": "/generate-svg",
+      "destination": "/api/generate-svg"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    }
   ],
   "functions": {
-    "api/generate-svg.ts": {
+    "api/generate-svg.js": {
       "memory": 1024,
       "maxDuration": 60
     },
