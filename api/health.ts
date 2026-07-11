@@ -1,6 +1,10 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-export default function handler(_req: VercelRequest, res: VercelResponse) {
+export default function handler(
+  _req: { method?: string },
+  res: {
+    setHeader: (k: string, v: string) => void;
+    status: (n: number) => { json: (b: unknown) => void };
+  },
+) {
   const key = process.env.GROQ_API_KEY?.trim();
   res.setHeader("Content-Type", "application/json");
   res.status(200).json({

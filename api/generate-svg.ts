@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleGenerateSvgRequest } from "./lib/generateHandler";
+import { handleGenerateSvgRequest } from "./_lib/generateHandler";
 
 export const config = {
   api: {
