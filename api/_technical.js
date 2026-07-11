@@ -64,6 +64,130 @@ async function toGray(imageBase64) {
   return { gray: data, width: w, height: h };
 }
 
+/**
+ * Locate the main drawing in a cluttered photo and return a crop rectangle.
+ *
+ * The idea: the drawing is the dominant *cluster* of ink. We bucket ink into a
+ * coarse grid, connect occupied cells into blobs, pick the blob with the most
+ * ink mass, then absorb any nearby significant blobs (so a drawing made of a few
+ * separate shapes stays whole) while leaving distant clutter — printed text, a
+ * logo, other sketches — outside the crop.
+ *
+ * Returns null when there's no clear subject to crop to (e.g. the drawing already
+ * fills the frame), so single, full-frame drawings are left untouched.
+ */
+function findDrawingCrop(gray, w, h) {
+  const t = otsuThreshold(gray);
+  const ink = new Uint8Array(w * h);
+  let total = 0;
+  for (let i = 0; i < gray.length; i++) {
+    if (gray[i] < t) {
+      ink[i] = 1;
+      total++;
+    }
+  }
+  if (total < 50) return null;
+
+  const cell = Math.max(6, Math.round(Math.min(w, h) * 0.02));
+  const gw = Math.ceil(w / cell);
+  const gh = Math.ceil(h / cell);
+  const mass = new Float64Array(gw * gh);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (ink[y * w + x]) mass[Math.floor(y / cell) * gw + Math.floor(x / cell)]++;
+    }
+  }
+
+  // Connected components of occupied cells (8-connectivity).
+  const label = new Int32Array(gw * gh).fill(-1);
+  const comps = [];
+  const stack = [];
+  for (let start = 0; start < gw * gh; start++) {
+    if (mass[start] === 0 || label[start] >= 0) continue;
+    const id = comps.length;
+    stack.length = 0;
+    stack.push(start);
+    label[start] = id;
+    let m = 0;
+    let minx = gw;
+    let miny = gh;
+    let maxx = 0;
+    let maxy = 0;
+    while (stack.length) {
+      const c = stack.pop();
+      const cx = c % gw;
+      const cy = (c - cx) / gw;
+      m += mass[c];
+      if (cx < minx) minx = cx;
+      if (cx > maxx) maxx = cx;
+      if (cy < miny) miny = cy;
+      if (cy > maxy) maxy = cy;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+          const ni = ny * gw + nx;
+          if (mass[ni] > 0 && label[ni] < 0) {
+            label[ni] = id;
+            stack.push(ni);
+          }
+        }
+      }
+    }
+    comps.push({ m, minx, miny, maxx, maxy });
+  }
+  if (comps.length <= 1) return null; // nothing to separate from
+
+  comps.sort((a, b) => b.m - a.m);
+  const dom = comps[0];
+  const bboxCells = (dom.maxx - dom.minx + 1) * (dom.maxy - dom.miny + 1);
+  // The subject already dominates the frame → no useful crop.
+  if (dom.m / total > 0.85 || bboxCells / (gw * gh) > 0.55) return null;
+
+  // Grow the crop to include nearby significant blobs (parts of one drawing).
+  let minx = dom.minx;
+  let miny = dom.miny;
+  let maxx = dom.maxx;
+  let maxy = dom.maxy;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of comps) {
+      if (c === dom || c.m < dom.m * 0.06) continue;
+      const nearX = c.minx <= maxx + 2 && c.maxx >= minx - 2;
+      const nearY = c.miny <= maxy + 2 && c.maxy >= miny - 2;
+      if (nearX && nearY) {
+        if (c.minx < minx) ((minx = c.minx), (changed = true));
+        if (c.maxx > maxx) ((maxx = c.maxx), (changed = true));
+        if (c.miny < miny) ((miny = c.miny), (changed = true));
+        if (c.maxy > maxy) ((maxy = c.maxy), (changed = true));
+      }
+    }
+  }
+
+  const m = 1; // one-cell margin
+  const x0 = Math.max(0, (minx - m) * cell);
+  const y0 = Math.max(0, (miny - m) * cell);
+  const x1 = Math.min(w, (maxx + 1 + m) * cell);
+  const y1 = Math.min(h, (maxy + 1 + m) * cell);
+  const cw = x1 - x0;
+  const ch = y1 - y0;
+  if (cw < 24 || ch < 24 || cw * ch > 0.85 * w * h) return null;
+  return { x0, y0, cw, ch };
+}
+
+/** Crop a raw grayscale buffer to a rectangle. */
+function cropGray(gray, w, rect) {
+  const out = new Uint8Array(rect.cw * rect.ch);
+  for (let y = 0; y < rect.ch; y++) {
+    for (let x = 0; x < rect.cw; x++) {
+      out[y * rect.cw + x] = gray[(rect.y0 + y) * w + (rect.x0 + x)];
+    }
+  }
+  return out;
+}
+
 /** Binarize dark ink → 1, paper → 0. Returns { bin, darkFraction, meanDark }. */
 function binarizeInk(gray) {
   const t = otsuThreshold(gray);
@@ -776,12 +900,25 @@ function buildSvg(prims, w, h, strokeWidth) {
  * Convert an image into a technical (centerline) line drawing SVG.
  * @param {string} imageBase64
  * @param {string} mimeType
- * @param {{ mode?: "auto" | "line" | "edge" }} [options]
+ * @param {{ mode?: "auto" | "line" | "edge", isolate?: boolean }} [options]
  * @returns {Promise<{ svg: string, meta: object }>}
  */
 async function imageToTechnicalSvg(imageBase64, mimeType, options = {}) {
   const started = Date.now();
-  const { gray, width: w, height: h } = await toGray(imageBase64);
+  let { gray, width: w, height: h } = await toGray(imageBase64);
+
+  // Focus on the main drawing and drop background clutter (other papers, printed
+  // text, logos) unless the caller opted out.
+  let cropped = false;
+  if (options.isolate !== false) {
+    const rect = findDrawingCrop(gray, w, h);
+    if (rect) {
+      gray = cropGray(gray, w, rect);
+      w = rect.cw;
+      h = rect.ch;
+      cropped = true;
+    }
+  }
 
   const requested = options.mode || "auto";
   let mode = requested;
@@ -851,6 +988,7 @@ async function imageToTechnicalSvg(imageBase64, mimeType, options = {}) {
       elapsedMs: Date.now() - started,
       engine: "technical",
       mode,
+      isolated: cropped,
       strokeCount: prims.length,
       sourceWidth: w,
       sourceHeight: h,
