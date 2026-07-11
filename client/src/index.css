@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bricolage Grotesque", sans-serif;
+  --font-sans: "Sora", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-ink: #0b1f33;
+  --color-ink-soft: #1a3550;
+  --color-paper: #e7eef5;
+  --color-paper-bright: #f4f8fc;
+  --color-line: #9bb0c4;
+  --color-accent: #00b4a0;
+  --color-accent-deep: #008f7f;
+  --color-warn: #e35d3b;
+  --color-glow: #7ee0d3;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background:
+      radial-gradient(ellipse 90% 60% at 10% -10%, rgba(0, 180, 160, 0.18), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 100% 0%, rgba(26, 53, 80, 0.12), transparent 50%),
+      linear-gradient(165deg, #dce7f1 0%, var(--color-paper) 42%, #f2f6fa 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body::before {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.35;
+    background-image:
+      linear-gradient(rgba(11, 31, 51, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(11, 31, 51, 0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  button,
+  a {
+    cursor: pointer;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

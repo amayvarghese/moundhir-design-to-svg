@@ -1,0 +1,33 @@
+{
+  "name": "sketch2svg-camera",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capture hand-drawn line art and convert it into clean, editable SVG via Groq Vision",
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build": "npm run build --prefix client",
+    "build:all": "npm run build --prefix client && npm run build --prefix server",
+    "start": "npm run start --prefix server",
+    "install:all": "npm install --prefix client --legacy-peer-deps && npm install --prefix server",
+    "vercel-build": "npm run build --prefix client"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "fast-xml-parser": "^5.2.5",
+    "groq-sdk": "^0.33.0",
+    "sharp": "^0.34.4",
+    "svgo": "^4.0.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@vercel/node": "^5.3.26",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

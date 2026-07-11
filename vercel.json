@@ -1,0 +1,16 @@
+{
+  "installCommand": "npm install && npm run install:all",
+  "buildCommand": "npm run build --prefix client",
+  "outputDirectory": "client/dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/generate-svg", "destination": "/api/generate-svg" },
+    { "source": "/health", "destination": "/api/health" }
+  ],
+  "functions": {
+    "api/generate-svg.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
