@@ -1146,4 +1146,31 @@ async function imageToTechnicalSvg(imageBase64, mimeType, options = {}) {
   };
 }
 
-module.exports = { imageToTechnicalSvg };
+/**
+ * Isolate just the drawing from a (possibly cluttered) photo and return it as a
+ * cropped PNG. Uses the same coloured-note / ink-cluster detection as the tracer.
+ * Handy for feeding a focused image to a vision model.
+ * @returns {Promise<{ imageBase64: string, mimeType: string, cropped: boolean }>}
+ */
+async function isolateDrawingImage(imageBase64) {
+  const { gray, width: w, height: h } = await toGray(imageBase64);
+  const rect =
+    (await detectNoteCrop(imageBase64, w, h, gray)) || findDrawingCrop(gray, w, h);
+
+  const input = Buffer.from(imageBase64, "base64");
+  let pipeline = sharp(input, { failOn: "none" })
+    .rotate()
+    .resize(w, h, { fit: "inside", withoutEnlargement: true });
+  if (rect) {
+    pipeline = pipeline.extract({
+      left: rect.x0,
+      top: rect.y0,
+      width: rect.cw,
+      height: rect.ch,
+    });
+  }
+  const out = await pipeline.png().toBuffer();
+  return { imageBase64: out.toString("base64"), mimeType: "image/png", cropped: !!rect };
+}
+
+module.exports = { imageToTechnicalSvg, isolateDrawingImage };

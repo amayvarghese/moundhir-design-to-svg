@@ -37,7 +37,7 @@ export default function App() {
   const [captured, setCaptured] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const [meta, setMeta] = useState<GenerateMeta | null>(null);
-  const [mode, setMode] = useState<TraceMode>("technical");
+  const [mode, setMode] = useState<TraceMode>("ai");
 
   // Request camera on load
   useEffect(() => {

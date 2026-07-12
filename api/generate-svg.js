@@ -1,6 +1,7 @@
 const { z } = require("zod");
 const { traceImageToSvg } = require("./_tracer");
 const { imageToTechnicalSvg } = require("./_technical");
+const { generateSvgWithGroq } = require("./_groq");
 
 const bodySchema = z.object({
   imageBase64: z.string().min(1),
@@ -9,13 +10,14 @@ const bodySchema = z.object({
     .regex(/^image\//)
     .optional()
     .default("image/jpeg"),
-  // "technical" (default) → clean centerline line drawing.
-  // "line" / "edge"        → technical drawing, forcing the extraction method.
-  // "silhouette"           → filled potrace trace (legacy behavior).
+  // "ai" (default)  → Groq vision model redraws it as clean, professional shapes.
+  // "technical"     → deterministic centerline geometry (line/edge auto).
+  // "line" / "edge" → technical, forcing the extraction method.
+  // "silhouette"    → filled potrace trace.
   mode: z
-    .enum(["technical", "line", "edge", "silhouette"])
+    .enum(["ai", "technical", "line", "edge", "silhouette"])
     .optional()
-    .default("technical"),
+    .default("ai"),
 });
 
 module.exports = async function handler(req, res) {
@@ -56,19 +58,35 @@ module.exports = async function handler(req, res) {
       imageBase64 = imageBase64.replace(/^data:[^;]+;base64,/i, "");
     }
 
+    const runTechnical = (m) =>
+      imageToTechnicalSvg(imageBase64, mimeType, {
+        mode: m === "technical" ? "auto" : m,
+      });
+
     let result;
-    if (mode === "silhouette") {
+    if (mode === "ai") {
+      // Groq redraws it as clean shapes; if the model/key is unavailable or the
+      // response is unusable, fall back to the deterministic tracer.
+      try {
+        result = await generateSvgWithGroq(imageBase64, mimeType, {});
+      } catch (aiError) {
+        console.warn("[api/generate-svg] AI fallback:", aiError && aiError.message);
+        result = await runTechnical("technical");
+        result.meta = {
+          ...result.meta,
+          aiFallback: true,
+          aiError: aiError instanceof Error ? aiError.message : String(aiError),
+        };
+      }
+    } else if (mode === "silhouette") {
       result = await traceImageToSvg(imageBase64, mimeType);
     } else {
-      const traceMode = mode === "technical" ? "auto" : mode; // line | edge | auto
-      result = await imageToTechnicalSvg(imageBase64, mimeType, {
-        mode: traceMode,
-      });
+      result = await runTechnical(mode); // line | edge | auto
     }
 
     res.status(200).json({
       svg: result.svg,
-      meta: { ...result.meta, retried: false, model: result.meta.engine },
+      meta: { ...result.meta, retried: false, model: result.meta.model || result.meta.engine },
     });
   } catch (error) {
     console.error("[api/generate-svg]", error);

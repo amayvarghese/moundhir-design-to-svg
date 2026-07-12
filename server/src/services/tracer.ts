@@ -8,8 +8,10 @@ const require = createRequire(import.meta.url);
 const { traceImageToSvg }: any = require("../../../api/_tracer.js");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const { imageToTechnicalSvg }: any = require("../../../api/_technical.js");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { generateSvgWithGroq }: any = require("../../../api/_groq.js");
 
-export type TraceMode = "technical" | "line" | "edge" | "silhouette";
+export type TraceMode = "ai" | "technical" | "line" | "edge" | "silhouette";
 
 export interface TraceResult {
   svg: string;
@@ -19,9 +21,10 @@ export interface TraceResult {
 }
 
 /**
- * Vectorize an image into a clean SVG.
- *   - "technical" (default): centerline line drawing, auto line/edge extraction
- *   - "line" / "edge": technical drawing forcing the extraction method
+ * Turn an image into a clean SVG.
+ *   - "ai" (default): a Groq vision model redraws it as clean, professional shapes
+ *   - "technical": deterministic centerline geometry (auto line/edge)
+ *   - "line" / "edge": technical, forcing the extraction method
  *   - "silhouette": filled potrace trace
  */
 export async function generateSvgFromImage(options: {
@@ -29,18 +32,35 @@ export async function generateSvgFromImage(options: {
   mimeType: string;
   mode?: TraceMode;
 }): Promise<TraceResult> {
-  const mode = options.mode ?? "technical";
-  const result =
-    mode === "silhouette"
-      ? await traceImageToSvg(options.imageBase64, options.mimeType)
-      : await imageToTechnicalSvg(options.imageBase64, options.mimeType, {
-          mode: mode === "technical" ? "auto" : mode,
-        });
+  const mode = options.mode ?? "ai";
+  const { imageBase64, mimeType } = options;
+
+  const technical = () =>
+    imageToTechnicalSvg(imageBase64, mimeType, {
+      mode: mode === "technical" || mode === "ai" ? "auto" : mode,
+    });
+
+  let result;
+  if (mode === "ai") {
+    try {
+      result = await generateSvgWithGroq(imageBase64, mimeType, {});
+    } catch (aiError) {
+      console.warn(
+        "[generate-svg] AI fallback:",
+        aiError instanceof Error ? aiError.message : aiError,
+      );
+      result = await technical();
+    }
+  } else if (mode === "silhouette") {
+    result = await traceImageToSvg(imageBase64, mimeType);
+  } else {
+    result = await technical();
+  }
 
   return {
     svg: result.svg,
     retried: false,
-    model: result.meta.engine,
+    model: result.meta.model || result.meta.engine,
     rawLength: result.svg.length,
   };
 }

@@ -11,10 +11,10 @@ interface ImagePreviewProps {
 }
 
 const MODES: { value: TraceMode; label: string; hint: string }[] = [
-  { value: "technical", label: "Auto", hint: "Detects sketch vs. photo" },
+  { value: "ai", label: "AI clean", hint: "Redraw as clean, professional shapes (Groq)" },
+  { value: "technical", label: "Trace", hint: "Exact geometry traced from the drawing" },
   { value: "line", label: "Line art", hint: "Trace dark pen/pencil strokes" },
   { value: "edge", label: "Outlines", hint: "Trace object edges (photos, 3D)" },
-  { value: "silhouette", label: "Filled", hint: "Solid filled shapes" },
 ];
 
 export function ImagePreview({

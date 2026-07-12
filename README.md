@@ -1,9 +1,17 @@
 # Sketch2SVG Camera
 
-Capture or upload an image and turn it into a clean, editable **technical line
-drawing** as SVG — single-stroke centerline paths, the way a CAD/blueprint drawing
-reads. Fully deterministic (no LLM guessing), no API key, no per-request cost, and
-it runs in tens of milliseconds.
+Capture or upload a drawing and turn it into clean, editable SVG. Two engines:
+
+- **AI (default)** — a Groq vision model (Llama 4) redraws the sketch as clean,
+  professional geometric shapes (perfect rects, triangles, circles). Needs a Groq
+  API key. Great edges; can idealize proportions.
+- **Trace / Line / Edge** — a fully local, deterministic vectorizer that traces
+  the actual drawing into exact geometry (straight lines, true circles, arcs). No
+  API key, no per-request cost, runs in tens of milliseconds.
+
+Both first **isolate the drawing** from a busy photo (crop to the note/paper and
+ignore background clutter). If the AI call fails or no key is set, the app
+automatically falls back to the deterministic tracer.
 
 Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 
@@ -12,7 +20,7 @@ Output canvas: **1.5 m × 3 m** (`viewBox="0 0 1500 3000"`, 1 unit = 1 mm).
 | Layer | Tech |
 | --- | --- |
 | Frontend | React, Vite, TypeScript, Tailwind, Framer Motion, PWA |
-| API | Deterministic vectorizer via Express (local) / Vercel Serverless |
+| API | Groq vision (AI mode) + deterministic vectorizer, via Express / Vercel |
 | Image / SVG | sharp, potrace, svgo, fast-xml-parser, zod |
 
 ## How it works
@@ -40,10 +48,14 @@ Pick a style in the UI, or send `mode` in the request:
 
 | `mode` | Output |
 | --- | --- |
-| `technical` (default) | Centerline line drawing; auto-picks line vs. edge |
+| `ai` (default) | Groq vision model redraws it as clean, professional shapes |
+| `technical` | Deterministic centerline geometry; auto-picks line vs. edge |
 | `line` | Centerline drawing, forcing dark-ink extraction |
 | `edge` | Centerline drawing, forcing edge extraction (photos, renders) |
 | `silhouette` | Filled potrace trace (solid shapes, not lines) |
+
+`ai` needs `GROQ_API_KEY`; if it's missing or the call fails, the request falls
+back to `technical` automatically. All other modes are fully local.
 
 Because the pipeline is fully deterministic, the same image + mode always produces
 the same SVG.
@@ -83,8 +95,15 @@ This repo lives at:
 
 ### 3. Environment variables
 
-None required for tracing. `vercel.json` allocates the tracer function 1 GB of
-memory and a 60 s `maxDuration`.
+For the default **AI mode**, add in **Project → Settings → Environment Variables**:
+
+| Name | Value |
+| --- | --- |
+| `GROQ_API_KEY` | your key from https://console.groq.com/keys |
+| `GROQ_VISION_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` (optional) |
+
+The Trace / Line / Edge modes need no key. `vercel.json` gives the function 1 GB
+of memory and a 60 s `maxDuration`.
 
 ### 4. Deploy
 

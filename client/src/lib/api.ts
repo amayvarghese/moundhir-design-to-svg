@@ -23,7 +23,7 @@ export function dataUrlToBase64(dataUrl: string): {
  */
 export async function generateSvg(
   imageDataUrl: string,
-  mode: TraceMode = "technical",
+  mode: TraceMode = "ai",
 ): Promise<GenerateSvgResponse> {
   const { imageBase64, mimeType } = dataUrlToBase64(imageDataUrl);
 

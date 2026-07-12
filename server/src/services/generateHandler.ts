@@ -10,9 +10,9 @@ const bodySchema = z.object({
     .optional()
     .default("image/jpeg"),
   mode: z
-    .enum(["technical", "line", "edge", "silhouette"])
+    .enum(["ai", "technical", "line", "edge", "silhouette"])
     .optional()
-    .default("technical"),
+    .default("ai"),
 });
 
 export type GenerateSvgBody = z.infer<typeof bodySchema>;
